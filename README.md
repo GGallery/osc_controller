@@ -46,7 +46,8 @@ Per le istruzioni specifiche di ogni piattaforma (cosa installare, permessi di r
 | `lib/*.dart.example` | Pagine di esempio pronte all'uso per i tutorial del manuale (sezioni 5, 6, 12.6) — ignorate da Flutter finché hanno l'estensione `.example`. |
 | `lib/osc_sender.dart` / `lib/osc_decoder.dart` | Costruzione/invio e decodifica dei pacchetti OSC via UDP. |
 | `lib/db.dart` | Database locale (SQLite via `drift`). |
-| `tools/test_osc_sender.py` | Script Python per inviare dati OSC finti e testare l'app senza un dispositivo esterno. |
+| `tools/test_osc_sender.py` | Script Python per inviare dati OSC finti verso l'app (testa la pagina Listener senza un dispositivo esterno). |
+| `tools/test_osc_receiver.py` | Script Python opposto: riceve e decodifica i dati OSC inviati dall'app (testa "Init Settings"/"Live Change" senza un dispositivo esterno). |
 | `test/` | Test automatici (`flutter test`). |
 
 Il dettaglio completo, file per file, è nella **sezione 2** del manuale utente.
@@ -55,7 +56,8 @@ Il dettaglio completo, file per file, è nella **sezione 2** del manuale utente.
 
 ```bash
 flutter test                              # tutti i test automatici
-python3 tools/test_osc_sender.py          # test manuale in tempo reale (vedi sezione 14 del manuale)
+python3 tools/test_osc_sender.py          # simula il visore: manda dati finti ALL'app (sezione 14.2)
+python3 tools/test_osc_receiver.py        # simula il visore: riceve i dati che l'app INVIA (sezione 14.3)
 ```
 
 ## Stack tecnico

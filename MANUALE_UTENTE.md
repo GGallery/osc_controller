@@ -1825,7 +1825,7 @@ distribuzione.setSlices([
 
 ## 14. Come eseguire i test
 
-Il progetto include sia **test automatici** (scritti con `flutter_test`, verificano che il codice si comporti come previsto) sia uno **script di test manuale** (per vedere l'app "in azione" con dati finti, senza un visore vero collegato). Non serve capire il codice per usarli: bastano i comandi qui sotto.
+Il progetto include sia **test automatici** (scritti con `flutter_test`, verificano che il codice si comporti come previsto) sia due **script di test manuale**, uno per direzione: `test_osc_sender.py` manda dati finti ALL'app (per provare la pagina Listener senza un visore vero), `test_osc_receiver.py` fa l'opposto e riceve i dati che l'app INVIA (per provare "Init Settings"/"Live Change" senza un visore vero dall'altra parte). Non serve capire il codice per usarli: bastano i comandi qui sotto.
 
 ### 14.1 Test automatici (`flutter test`)
 
@@ -1855,7 +1855,7 @@ Se un test fallisce dopo una modifica al codice, il messaggio d'errore nel termi
 
 Non serve un dispositivo/emulatore collegato per lanciare questi test: girano "a secco" sul computer.
 
-### 14.2 Test manuale in tempo reale (`tools/test_osc_sender.py`)
+### 14.2 Simulare il visore che INVIA dati (`tools/test_osc_sender.py`)
 
 Questo non è un test automatico: è uno script che invia dati OSC finti in continuazione, così puoi guardare l'app reagire dal vivo — utile soprattutto per provare la pagina Listener (sezione 12) senza dover collegare un visore VR vero.
 
@@ -1883,6 +1883,37 @@ python3 tools/test_osc_sender.py --ip 127.0.0.1 --port 9000 --interval 2 --once
 | `--port` | Porta UDP di ascolto (default `9000`, deve combaciare con quella mostrata nella pagina Listener) |
 | `--interval` | Secondi di pausa tra un invio e il successivo (default `2`) |
 | `--once` | Invia un solo giro di messaggi e poi esce, invece di continuare all'infinito |
+
+### 14.3 Simulare il dispositivo che RICEVE dati (`tools/test_osc_receiver.py`)
+
+Fa l'esatto opposto dello script precedente: invece di mandare dati finti all'app, si mette in ascolto e stampa a schermo i dati che **l'app invia verso l'esterno** — cioè simula il visore VR (o qualunque altro software OSC, es. TouchOSC, Resolume) che normalmente li riceverebbe. Utile per verificare che "Init Settings" (pulsante "Invia via OSC") e "Live Change" (ogni campo, secondo il proprio `trigger` — vedi [sezione 3](#3-concetti-base-come-funziona-un-campo-del-form)) mandino davvero i dati giusti, senza dover collegare un visore vero né uno strumento esterno di ispezione della rete.
+
+Richiede solo Python 3, come lo script precedente.
+
+Procedura:
+
+1. In un terminale, lancia lo script **prima** di inviare qualunque dato dall'app:
+   ```
+   python3 tools/test_osc_receiver.py
+   ```
+   Resta in ascolto su `0.0.0.0:9002` per default (tutte le interfacce di rete di questo computer, porta `9002` — diversa dalla `9000` della pagina Listener, così i due script possono girare insieme sullo stesso computer senza conflitti).
+2. Avvia l'app e vai in **Impostazioni**: imposta come IP l'indirizzo del computer su cui gira lo script (se è lo stesso computer dell'app, va bene `127.0.0.1`) e come Porta `9002` (o quella scelta con `--port`). Premi "Salva".
+3. Vai in **Init Settings**, cambia qualche campo e premi "Invia via OSC" (oppure vai in **Live Change** e muovi/tocca un campo): nel terminale dello script comparirà una riga per ogni messaggio ricevuto, con indirizzo OSC, id del campo e valore già decodificato (es. `/vr/sliderLive -> sliderLive = 42.5`).
+4. Premi `Ctrl+C` nel terminale dello script per fermare l'ascolto.
+
+Opzioni disponibili (facoltative):
+
+```
+python3 tools/test_osc_receiver.py --ip 0.0.0.0 --port 9002 --raw
+```
+
+| Opzione | A cosa serve |
+|---|---|
+| `--ip` | Indirizzo su cui restare in ascolto (default `0.0.0.0`, cioè tutte le interfacce di rete: va bene quasi sempre, anche se l'app gira su un altro dispositivo della stessa rete Wi-Fi) |
+| `--port` | Porta UDP di ascolto (default `9002`; deve combaciare con la Porta impostata in "Impostazioni" nell'app) |
+| `--raw` | Mostra anche i byte grezzi di ogni pacchetto ricevuto (utile solo per debug avanzato del formato OSC) |
+
+Se un pacchetto ricevuto non sembra un messaggio OSC valido (es. per errore è arrivato qualcos'altro sulla stessa porta), lo script lo segnala come "pacchetto non OSC valido" invece di fermarsi con un errore: continua ad ascoltare normalmente i messaggi successivi.
 
 ---
 
