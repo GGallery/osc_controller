@@ -1,0 +1,249 @@
+// audio_page.dart.example
+//
+// ESEMPIO PRONTO ALL'USO — vedi MANUALE_UTENTE, sezione 5 ("Tutorial: creare
+// una pagina statica da zero"). Mostra come creare da zero una pagina
+// STATICA ("Init Settings"): si compila con calma e si salva/invia solo
+// quando l'utente preme un pulsante esplicito.
+//
+// Per usarlo davvero nel progetto:
+//   1. Rinomina questo file in lib/audio_page.dart (togli ".example").
+//   2. Sposta la lista `audioPageSchema` qui sotto dentro lib/form_schema.dart
+//      (sezione 7.1, vicino a formPageSchema) — in questo file di esempio è
+//      tenuta qui solo per farlo funzionare "da solo", con un semplice
+//      copia-incolla, senza dover toccare altri file.
+//   3. Aggiungi la pagina alla barra di navigazione (Passo 3 del manuale,
+//      sezione 5): import in lib/app_main.dart, riga in `_pages`, voce
+//      corrispondente in `items` della BottomNavigationBar.
+//
+// Questo file NON viene compilato finché ha estensione ".dart.example":
+// Flutter/Dart ignorano qualunque file che non finisca in ".dart" — puoi
+// tenerlo nel progetto come riferimento senza che interferisca con nulla.
+
+import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
+import 'package:osc_controller/widgets/custom_app_bar.dart';
+
+// Gli stessi 4 "motori" usati da ogni altra pagina statica: schema dei
+// campi, database, invio OSC e disegno dei widget. Nessuno di questi file
+// va modificato per creare una pagina nuova: bastano import + riuso.
+import 'package:osc_controller/db.dart';
+import 'package:osc_controller/form_serializer.dart';
+import 'package:osc_controller/form_schema.dart';
+import 'package:osc_controller/device_settings.dart';
+import 'package:osc_controller/osc_sender.dart';
+import 'package:osc_controller/dynamic_field_builder.dart';
+import 'package:osc_controller/config_service.dart';
+import 'package:osc_controller/app_theme.dart';
+
+// ※ Schema per la pagina "Controllo Audio" (vedi manuale, sezione 5, Passo
+// 1). Nel progetto reale questa lista andrebbe spostata dentro
+// form_schema.dart (sezione 7.1, vicino a formPageSchema): resta qui solo
+// per rendere questo file di esempio autosufficiente.
+final List<DynamicFormField> audioPageSchema = [
+  DynamicFormField(
+    id: 'sezioneAudio',
+    label: 'Impostazioni Audio',
+    type: FormFieldType.label,
+  ),
+  DynamicFormField(
+    id: 'volumeMaster',
+    label: 'Volume Master',
+    type: FormFieldType.slider,
+    value: 70.0,
+    min: 0,
+    max: 100,
+  ),
+  DynamicFormField(
+    id: 'muto',
+    label: 'Muto',
+    type: FormFieldType.switchField,
+    value: false,
+  ),
+  DynamicFormField(
+    id: 'sorgenteAudio',
+    label: 'Sorgente',
+    type: FormFieldType.dropdown,
+    options: ['Microfono', 'Musica', 'Effetti'],
+  ),
+];
+
+class AudioPage extends StatefulWidget {
+  const AudioPage({super.key});
+
+  @override
+  State<AudioPage> createState() => _AudioPageState();
+}
+
+class _AudioPageState extends State<AudioPage> {
+  // Un TextEditingController per ogni campo di testo/numero della pagina
+  // (slider, switch, ecc. non lo usano). buildDynamicField lo crea/riusa da
+  // solo la prima volta che disegna un campo: qui serve solo la mappa vuota.
+  final Map<String, TextEditingController> _textControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Al primo apparire della pagina, ricarica gli eventuali valori salvati
+    // in precedenza (altrimenti la pagina si aprirebbe sempre "vuota", con
+    // i valori di default dello schema).
+    _loadFromDb();
+    // Se un'altra pagina cambia i dati "sotto ai piedi" di questa (es. una
+    // importazione JSON dalla pagina Impostazioni, vedi sezione 9),
+    // configRevision lo segnala e questa pagina si ricarica da sola.
+    configRevision.addListener(_loadFromDb);
+  }
+
+  @override
+  void dispose() {
+    // Va sempre rimosso il listener aggiunto in initState, altrimenti
+    // resterebbe agganciato anche dopo che la pagina è stata chiusa
+    // (memory leak) e potrebbe causare errori chiamando setState() su un
+    // widget non più presente a schermo.
+    configRevision.removeListener(_loadFromDb);
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  // Legge dal database (tabella comune a tutte le pagine, vedi lib/db.dart)
+  // tutte le righe salvate finora, e per ognuna cerca il campo con lo
+  // stesso id in audioPageSchema: se lo trova, converte il testo salvato
+  // nel tipo giusto (FormSerializer fa il percorso inverso di "serialize",
+  // usato invece in _saveToDatabase) e aggiorna sia field.value sia
+  // l'eventuale controller di testo già creato.
+  Future<void> _loadFromDb() async {
+    final rows = await DbService.instance.loadForm();
+    for (final row in rows) {
+      final field = audioPageSchema.firstWhereOrNull(
+        (f) => f.id == row.fieldId,
+      );
+      if (field == null) continue;
+      final raw = FormSerializer.deserializeByType(
+        field.type,
+        row.value,
+        selectionMode: field.selectionMode,
+      );
+      field.value = convertValueForType(field.type, raw);
+      _textControllers[field.id]?.text = field.value?.toString() ?? '';
+    }
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  // Collegata al pulsante "Salva nel DB": scorre TUTTI i campi con un
+  // valore vero e proprio (isDataField esclude i FormFieldType.label, che
+  // sono solo titoli) e salva ciascuno nel database, uno per uno. Non
+  // invia nulla via OSC: è solo persistenza locale sul dispositivo.
+  Future<void> _saveToDatabase() async {
+    for (final f in audioPageSchema) {
+      if (!isDataField(f.type)) continue;
+      await DbService.instance.saveValue(
+        fieldId: f.id,
+        value: FormSerializer.serialize(f.value),
+      );
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppColors.success,
+        content: Text('Valori salvati nel database'),
+      ),
+    );
+  }
+
+  // Collegata al pulsante "Invia via OSC": legge IP/porta/indirizzo da
+  // "Impostazioni" (DeviceSettings), raccoglie tutti i valori correnti dei
+  // campi in una mappa {id: valore} e li passa a OscSender.sendForm, che si
+  // occupa di costruire e spedire un messaggio OSC per ciascun campo (vedi
+  // sezione 11 per i dettagli). Il try/catch mostra un messaggio di errore
+  // leggibile invece di far "sparire" un problema di rete senza spiegazioni.
+  Future<void> _sendViaOsc() async {
+    try {
+      final settings = await DeviceSettings().load();
+      final formValues = {
+        for (final f in audioPageSchema)
+          if (isDataField(f.type)) f.id: f.value,
+      };
+      await OscSender.sendForm(
+        baseAddress: settings['address'] as String,
+        formValues: formValues,
+        targetIp: settings['ip'] as String,
+        targetPort: settings['port'] as int,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: AppColors.success,
+          content: Text('Dati inviati via OSC!'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.error,
+          content: Text('Errore invio OSC: $e'),
+        ),
+      );
+    }
+  }
+
+  // Disegna UN campo, delegando tutto il lavoro vero a buildDynamicField
+  // (lib/dynamic_field_builder.dart): qui c'è solo un po' di spaziatura
+  // (Padding) e il collegamento a onValueChanged, che aggiorna field.value
+  // e ridisegna la pagina (setState) ogni volta che l'utente tocca il
+  // campo — ma NON salva né invia nulla da sola: per una pagina statica
+  // questo avviene solo premendo i pulsanti, non ad ogni interazione.
+  Widget buildField(DynamicFormField field, bool isMobile) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: buildDynamicField(
+        field,
+        context: context,
+        textControllers: _textControllers,
+        onValueChanged: (value) => setState(() => field.value = value),
+        isMobile: isMobile,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Sotto i 600px di larghezza consideriamo il layout "mobile" (usato da
+    // alcuni tipi di campo, es. date/time picker, per adattare la propria
+    // larghezza — vedi dynamic_field_builder.dart).
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    return Scaffold(
+      appBar: const CustomAppBar(),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Un widget per ogni campo dello schema, nell'ordine in cui
+              // compare in audioPageSchema: per riordinare i campi a
+              // schermo basta riordinare le righe nello schema, non serve
+              // toccare questo file.
+              ...audioPageSchema.map((f) => buildField(f, isMobile)),
+              const SizedBox(height: 32),
+              // I due pulsanti espliciti: è la differenza chiave rispetto
+              // a una pagina "live" (sezione 6), dove non ce n'è bisogno
+              // perché ogni campo invia/salva già da solo.
+              ElevatedButton(
+                onPressed: _saveToDatabase,
+                child: const Text('Salva nel DB'),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _sendViaOsc,
+                child: const Text('Invia via OSC'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

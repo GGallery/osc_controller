@@ -308,14 +308,14 @@ Tutti i file "operativi" (quelli che contengono davvero la logica dell'app) sono
 | `lib/main.dart` | Punto di partenza dell'app: avvia la Splash screen. **Di solito non va mai toccato.** |
 | `lib/app_main.dart` | Definisce la barra di navigazione in basso e le 4 pagine (`HomeNavigation`). Qui si aggiunge una pagina nuova alla barra in basso. |
 | `lib/app_theme.dart` | **Tutti i colori dell'app in un unico posto.** Vedi [sezione 8](#8-personalizzare-i-colori). |
-| `lib/form_schema.dart` | **Il file più importante per chi non programma.** Contiene l'elenco di tutti i tipi di campo disponibili (`FormFieldType`) e le liste di campi delle pagine: `formPageSchema` (statica), `livePageSchema` (live, invia) e `receiverPageSchema` (Listener, riceve — vedi [sezione 12](#12-la-pagina-listener-attiva-ricevere-dati-in-tempo-reale)). Qui si aggiungono/tolgono/modificano i campi dei form, copiando gli esempi. |
+| `lib/form_schema.dart` | **Il file più importante per chi non programma.** In cima contiene l'elenco di tutti i tipi di campo disponibili (`FormFieldType`) e la classe `DynamicChartField` per i grafici; in fondo al file (sezione 7, suddivisa in 7.1/7.2/7.3, una sottosezione per pagina) ci sono le liste vere e proprie: `formPageSchema` (statica), `livePageSchema` (live, invia) e `receiverPageSchema`/`receiverChartSchema` (Listener, riceve campi e grafici insieme — vedi [sezione 12](#12-la-pagina-listener-attiva-ricevere-dati-in-tempo-reale)). Qui si aggiungono/tolgono/modificano i campi e i grafici dei form, copiando gli esempi. |
+| `lib/audio_page.dart.example`, `lib/audio_live_page.dart.example`, `lib/sensor_receiver_page.dart.example` | Pagine di esempio già pronte, usate nei tutorial delle sezioni [5](#5-tutorial-creare-una-pagina-statica-da-zero), [6](#6-tutorial-creare-una-pagina-live-da-zero) e [12.6](#126-esempio-creare-una-seconda-pagina-di-ricezione-dedicata). L'estensione `.dart.example` (invece di `.dart`) fa sì che Flutter le ignori completamente finché restano così: basta rinominarle togliendo `.example` per attivarle davvero. |
 | `lib/dynamic_field_builder.dart` | Il "motore grafico": trasforma ogni campo dello schema nel widget giusto (slider, switch, ecc.). Va toccato solo se si vuole creare un tipo di campo **nuovo** che non esiste già. |
 | `lib/form_page.dart` | La pagina "Init Settings" (statica): mostra `formPageSchema` e i due pulsanti "Salva nel DB" / "Invia via OSC". |
 | `lib/live_change_page.dart` | La pagina "Live Change": mostra `livePageSchema`, invia via OSC automaticamente secondo il `trigger` di ogni campo. |
 | `lib/settings_page.dart` | La pagina "Impostazioni": IP/porta/indirizzo OSC del dispositivo, ed export/import della configurazione. |
 | `lib/receiver_osc_page.dart` | La pagina "Ricevi OSC" (Listener): ascolta la porta UDP 9000, mostra in cima i campi "in sola lettura" di `receiverPageSchema` (uno slider, un'area di testo) e i grafici di `receiverChartSchema`, tutti collegati per id ai dati in arrivo, e sotto il registro di tutti i messaggi ricevuti (utile per il debug). |
 | `lib/osc_decoder.dart` | Fa l'operazione inversa di `osc_sender.dart`: decodifica i byte grezzi di un pacchetto OSC in arrivo (indirizzo + valori), usato dalla pagina Listener. |
-| `lib/chart_schema.dart` | Stessa idea di `form_schema.dart` ma per i grafici: la classe `DynamicChartField` e le liste di grafici di una pagina (es. `receiverChartSchema`). Vedi [sezione 13](#13-i-grafici-visualizzare-i-dati-con-fl_chart). |
 | `lib/chart_builder.dart` | Il "motore grafico" dei grafici: trasforma un `DynamicChartField` nel widget `fl_chart` giusto (linea, barre, torta). Va toccato solo per aggiungere un tipo di grafico nuovo. |
 | `lib/form_serializer.dart` | Converte i valori dei campi (numeri, colori, date, ecc.) in testo da salvare nel database/JSON, e viceversa. Non richiede modifiche a meno di aggiungere un tipo di campo nuovo. |
 | `lib/osc_sender.dart` | Costruisce e invia i pacchetti OSC via UDP. Non richiede modifiche in condizioni normali. |
@@ -913,7 +913,7 @@ DynamicFormField(id: 'sezioneTestoLive', label: 'Campi di testo', type: FormFiel
 
 ### Grafici
 
-A differenza dei tipi sopra, i grafici **non sono campi del form**: non si inviano via OSC, servono a **visualizzare** dei dati (tipicamente quelli ricevuti nella pagina Listener). Usano una classe diversa, `DynamicChartField` (invece di `DynamicFormField`), definita in `lib/chart_schema.dart`; il disegno è gestito da `buildDynamicChart(...)` in `lib/chart_builder.dart`, con lo stesso pacchetto esterno `fl_chart`. Dettagli completi ed esempi di collegamento ai dati OSC nella [sezione 13](#13-i-grafici-visualizzare-i-dati-con-fl_chart).
+A differenza dei tipi sopra, i grafici **non sono campi del form**: non si inviano via OSC, servono a **visualizzare** dei dati (tipicamente quelli ricevuti nella pagina Listener). Usano una classe diversa, `DynamicChartField` (invece di `DynamicFormField`), definita **nello stesso file** dei campi, `lib/form_schema.dart` (sezione 6); il disegno è gestito da `buildDynamicChart(...)` in `lib/chart_builder.dart`, con lo stesso pacchetto esterno `fl_chart`. Dettagli completi ed esempi di collegamento ai dati OSC nella [sezione 13](#13-i-grafici-visualizzare-i-dati-con-fl_chart).
 
 **`ChartType.line`** — grafico a linea, ideale per mostrare l'andamento nel tempo di un valore che cambia in continuazione (es. uno slider ricevuto via OSC).
 ```dart
@@ -975,9 +975,11 @@ In pratica: se non sei sicuro di quale usare, parti da una pagina **statica** (p
 
 Immaginiamo ora di voler creare una nuova pagina "Controllo Audio" con qualche campo, che si compila e si invia con un pulsante (come "Init Settings").
 
+> **Scorciatoia:** l'esempio di questo tutorial esiste già, pronto all'uso, in `lib/audio_page.dart.example`. Basta rinominarlo in `lib/audio_page.dart` (togliendo `.example`), spostare la lista `audioPageSchema` che contiene dentro `lib/form_schema.dart` (sezione 7.1) e fare il Passo 3 qui sotto — non serve ricopiare a mano il codice dei Passi 1-2. I due passi che seguono restano comunque utili per capire COSA fa quel file e replicare la stessa idea con una pagina diversa dalla tua.
+
 **Passo 1 — Aggiungi lo schema dei campi**
 
-Apri `lib/form_schema.dart` e, in fondo al file, aggiungi una nuova lista copiando lo stile di `formPageSchema`:
+Apri `lib/form_schema.dart` e, in fondo al file (sezione 7.1, vicino a `formPageSchema`), aggiungi una nuova lista copiando lo stile di `formPageSchema`:
 
 ```dart
 // ※ Schema per la pagina "Controllo Audio"
@@ -1194,6 +1196,8 @@ Fatto: riavvia l'app e la nuova scheda "Audio" comparirà nella barra in basso, 
 (Se non hai ancora letto ["Quando creare una pagina statica invece di una live"](#5-tutorial-creare-una-pagina-statica-da-zero) all'inizio della sezione 5, vale la pena tornarci: qui diamo per scontato che tu abbia già deciso che ti serve una pagina **live**, cioè che ogni campo debba salvare/inviare **da solo**, senza un pulsante esplicito.)
 
 Stessa idea del tutorial precedente (stesso schema `DynamicFormField`, stesso motore `buildDynamicField`), ma copiando `lib/live_change_page.dart` invece di `form_page.dart`. La differenza chiave sta in **quando** parte il salvataggio/invio: invece di due pulsanti, ogni campo passa a `buildDynamicField` **due** callback distinte:
+
+> **Scorciatoia:** anche per questo tutorial esiste già un esempio pronto all'uso in `lib/audio_live_page.dart.example`. Basta rinominarlo in `lib/audio_live_page.dart`, spostare la lista `audioLivePageSchema` che contiene dentro `lib/form_schema.dart` (sezione 7.2) e fare il Passo 3 qui sotto.
 
 ```dart
 buildDynamicField(
@@ -1499,7 +1503,7 @@ La pagina "Ricevi OSC" non si limita a registrare i messaggi ricevuti come testo
 
 ### 12.1 Dove sono definiti
 
-I campi mostrati nella pagina Listener sono elencati in `lib/form_schema.dart`, nella lista `receiverPageSchema` (in fondo al file):
+I campi mostrati nella pagina Listener sono elencati in `lib/form_schema.dart`, nella lista `receiverPageSchema` (sezione 7.3, in fondo al file):
 
 ```dart
 final List<DynamicFormField> receiverPageSchema = [
@@ -1530,7 +1534,7 @@ Il campo viene disegnato passando `readOnly: true` a `buildDynamicField` (un'opz
 
 Per far comparire un nuovo campo che si aggiorna da solo quando arriva un certo dato via OSC:
 
-1. Apri `lib/form_schema.dart` e aggiungi una riga a `receiverPageSchema`, con l'`id` esattamente uguale al nome del campo che ti aspetti nel pacchetto in arrivo (il "fieldId", primo argomento del messaggio — se il dato arriva da un'altra pagina di questa stessa app, è l'`id` che hai dato a quel campo nel suo schema; se arriva da un dispositivo/software esterno, è come quel dispositivo chiama il dato).
+1. Apri `lib/form_schema.dart` e aggiungi una riga a `receiverPageSchema` (sezione 7.3), con l'`id` esattamente uguale al nome del campo che ti aspetti nel pacchetto in arrivo (il "fieldId", primo argomento del messaggio — se il dato arriva da un'altra pagina di questa stessa app, è l'`id` che hai dato a quel campo nel suo schema; se arriva da un dispositivo/software esterno, è come quel dispositivo chiama il dato).
 2. Scegli il `type` più adatto (per ora sono stati testati `slider`, `numberSlider` e `multiline`; gli altri tipi funzionano nel motore di disegno ma non hanno ancora la modalità "sola lettura" applicata — vedi punto 3 se ti serve estenderla).
 3. Nella pagina che vuoi usare, disegna la lista con `...receiverPageSchema.map((field) => buildDynamicField(field, ..., readOnly: true))`, sullo stesso modello già usato per `formPageSchema`/`livePageSchema` nelle altre pagine (`receiver_osc_page.dart` lo fa già per questa lista).
 
@@ -1596,9 +1600,11 @@ A volte non basta la pagina Listener unica già presente: ad esempio potresti vo
 
 **Attenzione al punto più importante — la porta UDP:** `RawDatagramSocket.bind(...)` (usato da `receiver_osc_page.dart`) può avere **un solo "proprietario" per porta** sullo stesso dispositivo: due pagine non possono ascoltare **la stessa** porta (9000) contemporaneamente. La soluzione più semplice è far ascoltare la nuova pagina su una **porta diversa** (es. 9001), e configurare il mittente (visore/sensore/script di test) perché mandi i dati dei sensori a quella porta invece che a 9000.
 
+> **Scorciatoia:** questo intero esempio esiste già, pronto all'uso, in `lib/sensor_receiver_page.dart.example` (già impostato sulla porta 9001). Basta rinominarlo in `lib/sensor_receiver_page.dart`, spostare `sensorPageSchema`/`sensorChartSchema` che contiene dentro `lib/form_schema.dart` (sezione 7.3) e fare il Passo 3 qui sotto.
+
 **Passo 1 — Aggiungi gli schemi dei campi "riceventi" e dei grafici**
 
-In `lib/form_schema.dart`, vicino a `receiverPageSchema`, aggiungi una nuova lista con i **due campi in sola lettura** (vedi [sezione 12.1](#121-dove-sono-definiti)):
+In `lib/form_schema.dart`, vicino a `receiverPageSchema` (sezione 7.3), aggiungi una nuova lista con i **due campi in sola lettura** (vedi [sezione 12.1](#121-dove-sono-definiti)):
 
 ```dart
 // ※ Schema dei CAMPI per la pagina "Ricevi Sensori" (porta UDP 9001)
@@ -1623,7 +1629,7 @@ final List<DynamicFormField> sensorPageSchema = [
 ];
 ```
 
-E in `lib/chart_schema.dart`, vicino a `receiverChartSchema`, aggiungi i **due grafici** corrispondenti, usando **lo stesso id** dei campi qui sopra (è quello che li collega automaticamente, vedi [sezione 13.1](#131-dove-sono-definiti)):
+Sempre in `lib/form_schema.dart` (sezione 7.3, subito sotto, vicino a `receiverChartSchema`), aggiungi i **due grafici** corrispondenti, usando **lo stesso id** dei campi qui sopra (è quello che li collega automaticamente, vedi [sezione 13.1](#131-dove-sono-definiti)):
 
 ```dart
 // ※ Schema dei GRAFICI per la pagina "Ricevi Sensori" (porta UDP 9001)
@@ -1732,17 +1738,17 @@ Come nei tutorial precedenti: import in `lib/app_main.dart`, `const SensorReceiv
 
 Oltre agli slider "in sola lettura" (sezione 12), la pagina Listener mostra anche un paio di **grafici** che tengono uno storico degli ultimi valori ricevuti, non solo l'ultimo. Sono realizzati con il pacchetto esterno [fl_chart](https://pub.dev/packages/fl_chart), aggiunto a `pubspec.yaml`.
 
-Anche qui vale la stessa idea "mattoncino" usata per i campi del form: una classe che descrive UN grafico (`lib/chart_schema.dart`) e un motore di disegno che la trasforma nel widget giusto (`lib/chart_builder.dart`), così chi aggiunge un grafico nuovo non deve sapere come è fatto `fl_chart` internamente.
+Anche qui vale la stessa idea "mattoncino" usata per i campi del form: una classe che descrive UN grafico (`lib/form_schema.dart`, sezione 6) e un motore di disegno che la trasforma nel widget giusto (`lib/chart_builder.dart`), così chi aggiunge un grafico nuovo non deve sapere come è fatto `fl_chart` internamente.
 
 ### 13.1 Dove sono definiti
 
-`lib/chart_schema.dart` contiene:
+La classe e gli enum "motore" sono nella parte alta di `lib/form_schema.dart` (sezione 6, subito dopo gli esempi di campo):
 
 - `ChartType`: i tipi di grafico disponibili — `line` (a linea, andamento nel tempo), `bar` (a barre) e `pie` (a torta, proporzioni tra categorie).
 - `DynamicChartField`: il "mattoncino" grafico — id, etichetta, tipo, colore, estremi dell'asse Y (`min`/`max`) e quanti punti tenere in memoria (`maxPoints`, una "finestra scorrevole": oltre questo numero, i valori più vecchi vengono scartati automaticamente).
 - `ChartSlice`: una singola fetta di un grafico a torta (etichetta, valore, colore).
 
-I grafici oggi mostrati nella pagina Listener sono elencati nella lista `receiverChartSchema`, in fondo allo stesso file:
+I grafici oggi mostrati nella pagina Listener sono elencati nella lista `receiverChartSchema`, in fondo allo stesso file (sezione 7.3, subito sotto `receiverPageSchema`):
 
 ```dart
 final List<DynamicChartField> receiverChartSchema = [
@@ -1777,7 +1783,7 @@ Per i grafici a torta (`ChartType.pie`) non c'è uno storico da far scorrere: si
 
 ### 13.3 Come aggiungere un nuovo grafico
 
-1. Apri `lib/chart_schema.dart` e aggiungi una riga `DynamicChartField` a `receiverChartSchema` (o a una nuova lista, se il grafico serve in un'altra pagina), scegliendo `type` tra `line`, `bar` e `pie`.
+1. Apri `lib/form_schema.dart` (sezione 7.3, in fondo al file) e aggiungi una riga `DynamicChartField` a `receiverChartSchema` (o a una nuova lista, se il grafico serve in un'altra pagina), scegliendo `type` tra `line`, `bar` e `pie`.
 2. Se vuoi ANCHE un campo "in sola lettura" (slider o area di testo) abbinato allo stesso dato, usa lo stesso `id` di una riga in `receiverPageSchema` (sezione 12): `receiver_osc_page.dart` collega automaticamente campo e grafico per id. Non è obbligatorio: un grafico può benissimo esistere da solo, senza un campo abbinato.
 3. In qualunque altra pagina, per disegnare il grafico basta chiamare `buildDynamicChart(ilTuoGrafico)` — nessun'altra configurazione necessaria.
 
@@ -1813,7 +1819,7 @@ distribuzione.setSlices([
 
 ### 13.4 Aggiungere un tipo di grafico nuovo
 
-`fl_chart` supporta anche altri tipi (es. scatter, radar) non ancora collegati a `buildDynamicChart`. Per aggiungerne uno: apri `lib/chart_builder.dart`, aggiungi il nuovo valore a `ChartType` (in `chart_schema.dart`) e un nuovo `case` nello switch di `buildDynamicChart`, seguendo lo stesso schema già usato per `line`/`bar`/`pie` (una funzione privata `_buildXxxChart` che legge i dati dal campo e ritorna il widget `fl_chart` corrispondente).
+`fl_chart` supporta anche altri tipi (es. scatter, radar) non ancora collegati a `buildDynamicChart`. Per aggiungerne uno: apri `lib/chart_builder.dart`, aggiungi il nuovo valore a `ChartType` (in `form_schema.dart`, sezione 6) e un nuovo `case` nello switch di `buildDynamicChart`, seguendo lo stesso schema già usato per `line`/`bar`/`pie` (una funzione privata `_buildXxxChart` che legge i dati dal campo e ritorna il widget `fl_chart` corrispondente).
 
 ---
 

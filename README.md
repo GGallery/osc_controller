@@ -39,10 +39,11 @@ Per le istruzioni specifiche di ogni piattaforma (cosa installare, permessi di r
 
 | Percorso | Contenuto |
 |---|---|
-| `lib/form_schema.dart` | Elenco dei tipi di campo disponibili e schema dei campi di ogni pagina — il file da modificare per aggiungere/togliere campi. |
+| `lib/form_schema.dart` | Tipi di campo disponibili e classe dei grafici in cima (sezioni 1-6); in fondo (sezione 7, per pagina: 7.1/7.2/7.3) gli schemi veri e propri — il file da modificare per aggiungere/togliere campi o grafici. |
 | `lib/dynamic_field_builder.dart` | Motore che trasforma ogni campo dello schema nel widget Flutter corrispondente. |
-| `lib/chart_schema.dart` / `lib/chart_builder.dart` | Stessa idea, per i grafici. |
+| `lib/chart_builder.dart` | Stessa idea, per i grafici (classe definita in `form_schema.dart`, sezione 6). |
 | `lib/form_page.dart`, `lib/live_change_page.dart`, `lib/receiver_osc_page.dart`, `lib/settings_page.dart` | Le 4 pagine dell'app. |
+| `lib/*.dart.example` | Pagine di esempio pronte all'uso per i tutorial del manuale (sezioni 5, 6, 12.6) — ignorate da Flutter finché hanno l'estensione `.example`. |
 | `lib/osc_sender.dart` / `lib/osc_decoder.dart` | Costruzione/invio e decodifica dei pacchetti OSC via UDP. |
 | `lib/db.dart` | Database locale (SQLite via `drift`). |
 | `tools/test_osc_sender.py` | Script Python per inviare dati OSC finti e testare l'app senza un dispositivo esterno. |

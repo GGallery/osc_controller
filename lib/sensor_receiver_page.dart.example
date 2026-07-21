@@ -1,0 +1,263 @@
+// sensor_receiver_page.dart.example
+//
+// ESEMPIO PRONTO ALL'USO — vedi MANUALE_UTENTE, sezione 12.6 ("Esempio:
+// creare una seconda pagina di ricezione dedicata"). Mostra come creare una
+// SECONDA pagina Listener, indipendente da quella principale
+// (lib/receiver_osc_page.dart), che ascolta su una porta UDP diversa (9001
+// invece di 9000) e mostra due campi in sola lettura + due grafici
+// (temperatura e umidità) invece dei campi/grafici della pagina principale.
+//
+// Per usarlo davvero nel progetto:
+//   1. Rinomina questo file in lib/sensor_receiver_page.dart (togli
+//      ".example").
+//   2. Sposta `sensorPageSchema` e `sensorChartSchema` qui sotto dentro
+//      lib/form_schema.dart (sezione 7.3, vicino a receiverPageSchema/
+//      receiverChartSchema) — in questo file di esempio restano qui solo
+//      per farlo funzionare "da solo", con un semplice copia-incolla.
+//   3. Aggiungi la pagina alla barra di navigazione: import in
+//      lib/app_main.dart, riga `const SensorReceiverPage()` in `_pages`,
+//      voce corrispondente in `items` della BottomNavigationBar.
+//   4. Per generare dati di prova, lancia
+//      `python3 tools/test_osc_sender.py --port 9001 --base-address /sensori`
+//      (vedi manuale, sezione 12.6, Passo 4, per come aggiungere anche
+//      valori finti dedicati di temperatura/umidità allo script).
+//
+// Questo file NON viene compilato finché ha estensione ".dart.example":
+// Flutter/Dart ignorano qualunque file che non finisca in ".dart" — puoi
+// tenerlo nel progetto come riferimento senza che interferisca con nulla.
+//
+// ATTENZIONE alla porta UDP: RawDatagramSocket.bind(...) può avere un solo
+// "proprietario" per porta sullo stesso dispositivo. Questa pagina ascolta
+// sulla porta 9001, DIVERSA da quella (9000) usata dalla pagina Listener
+// principale, altrimenti le due entrerebbero in conflitto.
+
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:osc_controller/app_theme.dart';
+import 'package:osc_controller/chart_builder.dart';
+import 'package:osc_controller/dynamic_field_builder.dart';
+import 'package:osc_controller/form_schema.dart';
+import 'package:osc_controller/osc_decoder.dart';
+import 'package:osc_controller/widgets/custom_app_bar.dart';
+
+// ※ Schema dei CAMPI per la pagina "Ricevi Sensori" (porta UDP 9001) — vedi
+// manuale, sezione 12.6, Passo 1. Nel progetto reale questa lista andrebbe
+// spostata dentro form_schema.dart (sezione 7.3): resta qui solo per
+// rendere questo file di esempio autosufficiente.
+final List<DynamicFormField> sensorPageSchema = [
+  DynamicFormField(
+    id: 'temperaturaRx',
+    label: 'Temperatura ricevuta',
+    type: FormFieldType.slider,
+    value: 0.0,
+    min: -20,
+    max: 50,
+  ),
+  DynamicFormField(
+    id: 'umiditaRx',
+    label: 'Umidità ricevuta',
+    type: FormFieldType.numberSlider,
+    value: 0.0,
+    min: 0,
+    max: 100,
+    step: 5,
+  ),
+];
+
+// ※ Schema dei GRAFICI per la stessa pagina, collegati per `id` ai campi
+// qui sopra (è quello che li collega automaticamente — vedi form_schema.dart
+// sezione 6 e receiverChartSchema in sezione 7.3 per l'esempio "gemello"
+// della pagina Listener principale).
+final List<DynamicChartField> sensorChartSchema = [
+  DynamicChartField(
+    id: 'temperaturaRx', // <- stesso id del campo slider qui sopra
+    label: 'Andamento nel tempo — Temperatura',
+    type: ChartType.line,
+    color: AppColors.error,
+    min: -20,
+    max: 50,
+    maxPoints: 30,
+  ),
+  DynamicChartField(
+    id: 'umiditaRx', // <- stesso id del campo numberSlider qui sopra
+    label: 'Andamento nel tempo — Umidità',
+    type: ChartType.bar,
+    color: AppColors.primary,
+    min: 0,
+    max: 100,
+    maxPoints: 20,
+  ),
+];
+
+class SensorReceiverPage extends StatefulWidget {
+  const SensorReceiverPage({super.key});
+
+  @override
+  State<SensorReceiverPage> createState() => _SensorReceiverPageState();
+}
+
+class _SensorReceiverPageState extends State<SensorReceiverPage> {
+  final List<String> _messages = [];
+  RawDatagramSocket? _socket;
+
+  final Map<String, TextEditingController> _textControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _log('🔍 Initializing socket listener...');
+    _startListening();
+  }
+
+  @override
+  void dispose() {
+    _log('🛑 Closing socket...');
+    _socket?.close();
+    for (final controller in _textControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  // Porta 9001, DIVERSA dalla 9000 della pagina Listener principale: due
+  // pagine non possono ascoltare la stessa porta contemporaneamente.
+  Future<void> _startListening({int port = 9001}) async {
+    try {
+      _log('🎧 Binding UDP socket to port $port...');
+      _socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, port);
+      _log('✅ Socket bound to ${_socket!.address.address}:${_socket!.port}');
+      _socket!.listen((RawSocketEvent event) {
+        _log('📡 Socket event: $event');
+        if (event == RawSocketEvent.read) {
+          final datagram = _socket!.receive();
+          if (datagram != null) {
+            final addr = datagram.address.address;
+            final rport = datagram.port;
+            final rawData = datagram.data;
+
+            final decoded = tryDecodeOscMessage(rawData);
+            final String debugMsg;
+            if (decoded != null) {
+              debugMsg = 'From $addr:$rport -> ${decoded.toDisplayString()}';
+              _updateLiveChart(decoded);
+              _updateReceiverFields(decoded);
+            } else {
+              final msg = String.fromCharCodes(rawData);
+              debugMsg = 'From $addr:$rport -> $msg (bytes: ${rawData.length})';
+            }
+            _log('📥 Received datagram: $debugMsg');
+            setState(() {
+              _messages.insert(0, debugMsg);
+            });
+          }
+        }
+      });
+    } catch (e) {
+      _log('❗ Failed to bind socket or listen: $e');
+      setState(() {
+        _messages.insert(0, 'Error starting socket: $e');
+      });
+    }
+  }
+
+  // Itera su sensorChartSchema invece che su receiverChartSchema.
+  void _updateLiveChart(OscDecodedMessage decoded) {
+    if (decoded.args.length < 2) return;
+    final fieldId = decoded.args.first;
+    final value = decoded.args[1];
+    if (value is! num) return;
+
+    for (final chart in sensorChartSchema) {
+      if (chart.id == fieldId) {
+        chart.addValue(value.toDouble());
+        break;
+      }
+    }
+  }
+
+  // Itera su sensorPageSchema invece che su receiverPageSchema.
+  void _updateReceiverFields(OscDecodedMessage decoded) {
+    if (decoded.args.length < 2) return;
+    final fieldId = decoded.args.first;
+    final value = decoded.args[1];
+
+    for (final field in sensorPageSchema) {
+      if (field.id == fieldId) {
+        field.value = convertValueForType(field.type, value);
+        break;
+      }
+    }
+  }
+
+  void _log(String text) {
+    print('SensorReceiverPage: $text');
+    setState(() {
+      _messages.insert(0, text);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const CustomAppBar(),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Text('In ascolto sulla porta 9001 (UDP) — Sensori'),
+            const SizedBox(height: 12),
+
+            // Stessa struttura Expanded + SingleChildScrollView della
+            // pagina Listener principale (vedi manuale, sezione 12.5, per
+            // il perché di questa combinazione).
+            Expanded(
+              flex: 3,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...sensorPageSchema.map(
+                      (field) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: buildDynamicField(
+                          field,
+                          context: context,
+                          textControllers: _textControllers,
+                          onValueChanged: (_) {},
+                          readOnly: true,
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    ...sensorChartSchema.map(
+                      (chart) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: buildDynamicChart(chart),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Divider(height: 24),
+
+            const Text(
+              'Registro messaggi ricevuti',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              flex: 2,
+              child: ListView.builder(
+                itemCount: _messages.length,
+                itemBuilder: (context, index) {
+                  return ListTile(title: Text(_messages[index]));
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

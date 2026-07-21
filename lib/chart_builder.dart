@@ -1,20 +1,20 @@
 // chart_builder.dart
 //
-// Trasforma un DynamicChartField (vedi chart_schema.dart) nel widget
-// grafico giusto, usando il pacchetto fl_chart. Stessa idea di
+// Trasforma un DynamicChartField (vedi form_schema.dart, sezione 6) nel
+// widget grafico giusto, usando il pacchetto fl_chart. Stessa idea di
 // dynamic_field_builder.dart per i campi del form: le pagine non devono
 // sapere COME è fatto un grafico, chiamano semplicemente
 // `buildDynamicChart(...)` per ogni grafico dello schema.
 //
 // Non serve modificare questo file per aggiungere un nuovo grafico a una
-// pagina (vedi chart_schema.dart per quello): va toccato solo se serve un
-// tipo di grafico NUOVO che non esiste già (es. scatter, radar — fl_chart li
-// supporta entrambi, basta aggiungere un case allo switch qui sotto seguendo
-// lo stesso schema dei tipi già presenti).
+// pagina (vedi form_schema.dart, sezioni 6/7.3, per quello): va toccato solo se
+// serve un tipo di grafico NUOVO che non esiste già (es. scatter, radar —
+// fl_chart li supporta entrambi, basta aggiungere un case allo switch qui
+// sotto seguendo lo stesso schema dei tipi già presenti).
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'chart_schema.dart';
+import 'form_schema.dart';
 
 Widget buildDynamicChart(DynamicChartField field, {double height = 180}) {
   switch (field.type) {

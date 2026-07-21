@@ -1,0 +1,206 @@
+// audio_live_page.dart.example
+//
+// ESEMPIO PRONTO ALL'USO — vedi MANUALE_UTENTE, sezione 6 ("Tutorial: creare
+// una pagina 'live' da zero"). Mostra come creare da zero una pagina LIVE:
+// ogni campo salva/invia via OSC DA SOLO, secondo il proprio `trigger`,
+// senza bisogno di premere un pulsante esplicito (a differenza della pagina
+// statica di lib/audio_page.dart.example, sezione 5).
+//
+// Per usarlo davvero nel progetto:
+//   1. Rinomina questo file in lib/audio_live_page.dart (togli ".example").
+//   2. Sposta la lista `audioLivePageSchema` qui sotto dentro
+//      lib/form_schema.dart (sezione 7.2, vicino a livePageSchema) — in
+//      questo file di esempio è tenuta qui solo per farlo funzionare "da
+//      solo", con un semplice copia-incolla.
+//   3. Aggiungi la pagina alla barra di navigazione (Passo 3 del manuale,
+//      sezione 6): import in lib/app_main.dart, riga in `_pages`, voce
+//      corrispondente in `items` della BottomNavigationBar.
+//
+// Questo file NON viene compilato finché ha estensione ".dart.example":
+// Flutter/Dart ignorano qualunque file che non finisca in ".dart" — puoi
+// tenerlo nel progetto come riferimento senza che interferisca con nulla.
+
+import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
+import 'package:osc_controller/widgets/custom_app_bar.dart';
+
+import 'package:osc_controller/db.dart';
+import 'package:osc_controller/form_serializer.dart';
+import 'package:osc_controller/form_schema.dart';
+import 'package:osc_controller/device_settings.dart';
+import 'package:osc_controller/osc_sender.dart';
+import 'package:osc_controller/dynamic_field_builder.dart';
+import 'package:osc_controller/config_service.dart';
+import 'package:osc_controller/app_theme.dart';
+
+// ※ Schema per la pagina "Controllo Audio" (live) — vedi manuale, sezione 6,
+// Passo 1. Nel progetto reale questa lista andrebbe spostata dentro
+// form_schema.dart (sezione 7.2, vicino a livePageSchema): resta qui solo
+// per rendere questo file di esempio autosufficiente.
+//
+// Nota: gli id finiscono con "Live" per restare diversi da quelli, anche se
+// simili, usati in audioPageSchema (sezione 5, statica): ogni campo
+// dell'app, in qualunque pagina, deve avere un id UNICO.
+final List<DynamicFormField> audioLivePageSchema = [
+  DynamicFormField(
+    id: 'sezioneAudioLive',
+    label: 'Impostazioni Audio',
+    type: FormFieldType.label,
+  ),
+  DynamicFormField(
+    id: 'volumeMasterLive',
+    label: 'Volume Master',
+    type: FormFieldType.slider,
+    value: 70.0,
+    min: 0,
+    max: 100,
+    // onFocusLost: invia solo al rilascio dello slider, non ad ogni pixel
+    // trascinato — un buon compromesso tra reattività e traffico di rete.
+    trigger: FieldTrigger.onFocusLost,
+  ),
+  DynamicFormField(
+    id: 'mutoLive',
+    label: 'Muto',
+    type: FormFieldType.switchField,
+    value: false,
+    // onChange: uno switch è una scelta "secca" (acceso/spento), quindi ha
+    // senso inviarla subito ad ogni tocco, senza aspettare altro.
+    trigger: FieldTrigger.onChange,
+  ),
+  DynamicFormField(
+    id: 'sorgenteAudioLive',
+    label: 'Sorgente',
+    type: FormFieldType.dropdown,
+    options: ['Microfono', 'Musica', 'Effetti'],
+    // onChange: come per lo switch, un dropdown è una scelta a elenco:
+    // appena l'utente seleziona un'opzione è già una decisione definitiva,
+    // ha senso inviarla subito.
+    trigger: FieldTrigger.onChange,
+  ),
+];
+
+class AudioLivePage extends StatefulWidget {
+  const AudioLivePage({super.key});
+
+  @override
+  State<AudioLivePage> createState() => _AudioLivePageState();
+}
+
+class _AudioLivePageState extends State<AudioLivePage> {
+  // Stessa mappa di controller di testo della pagina statica (sezione 5).
+  final Map<String, TextEditingController> _textControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromDb();
+    configRevision.addListener(_loadFromDb);
+  }
+
+  @override
+  void dispose() {
+    configRevision.removeListener(_loadFromDb);
+    for (final c in _textControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  // Identico a _loadFromDb di AudioPage (sezione 5): ricarica i valori
+  // salvati in precedenza, cercando in audioLivePageSchema invece che in
+  // audioPageSchema.
+  Future<void> _loadFromDb() async {
+    final rows = await DbService.instance.loadForm();
+    for (final row in rows) {
+      final field = audioLivePageSchema.firstWhereOrNull(
+        (f) => f.id == row.fieldId,
+      );
+      if (field == null) continue;
+      final raw = FormSerializer.deserializeByType(
+        field.type,
+        row.value,
+        selectionMode: field.selectionMode,
+      );
+      field.value = convertValueForType(field.type, raw);
+      _textControllers[field.id]?.text = field.value?.toString() ?? '';
+    }
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  // Funzione unica per "committare" un campo: salva il nuovo valore nel
+  // database E lo invia via OSC nello stesso momento, così i due restano
+  // sempre allineati (a differenza della pagina statica, qui non ha senso
+  // separare "Salva" e "Invia" in due pulsanti distinti).
+  Future<void> _saveAndSend(String fieldId, dynamic value) async {
+    final field = audioLivePageSchema.firstWhereOrNull(
+      (f) => f.id == fieldId,
+    );
+    if (field == null) return;
+
+    // 1. Salva nel database (stesso meccanismo della pagina statica).
+    await DbService.instance.saveValue(
+      fieldId: fieldId,
+      value: FormSerializer.serialize(value),
+    );
+
+    // 2. Invia subito via OSC il singolo campo appena cambiato (non
+    //    l'intero form: è la differenza pratica più importante rispetto a
+    //    _sendViaOsc() della pagina statica, che invece manda tutti i
+    //    campi insieme, in un colpo solo, quando si preme "Invia via OSC").
+    final settings = await DeviceSettings().load();
+    await OscSender.sendForm(
+      baseAddress: settings['address'] as String,
+      formValues: {fieldId: value},
+      targetIp: settings['ip'] as String,
+      targetPort: settings['port'] as int,
+    );
+  }
+
+  // Disegna UN campo passando ENTRAMBE le callback: a differenza di
+  // AudioPage (sezione 5), qui non compaiono pulsanti "Salva"/"Invia" nella
+  // build() della pagina, perché non servono.
+  Widget buildField(DynamicFormField field, bool isMobile) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: buildDynamicField(
+        field,
+        context: context,
+        textControllers: _textControllers,
+        // onValueChanged: chiamata ad OGNI variazione del campo (anche solo
+        // "in corso", es. mentre si trascina uno slider). Serve solo per
+        // aggiornare la UI (setState) così il numero/il cursore seguono il
+        // dito dell'utente: NON deve salvare né inviare nulla da sola,
+        // altrimenti si rischia di mandare un messaggio OSC per ogni
+        // singolo pixel di trascinamento.
+        onValueChanged: (value) => setState(() => field.value = value),
+        // onValueCommitted: chiamata solo quando il valore va davvero
+        // salvato/inviato. IL MOMENTO in cui scatta dipende dal `trigger`
+        // del campo (onChange / onSubmit / onFocusLost / onButton — vedi
+        // sezione 3): buildDynamicField decide da solo quando richiamarla,
+        // in base al trigger che hai scritto nello schema.
+        onValueCommitted: (value) => _saveAndSend(field.id, value),
+        isMobile: isMobile,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    return Scaffold(
+      appBar: const CustomAppBar(),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...audioLivePageSchema.map((f) => buildField(f, isMobile)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

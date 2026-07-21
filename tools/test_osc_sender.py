@@ -124,7 +124,7 @@ def make_messages(base_address: str):
         build_osc_message(f"{base_address}/sliderRx", "sliderRx", slider_val),
         build_osc_message(f"{base_address}/textAreaRx", "textAreaRx", frase),
         # Questo aggiorna dal vivo il grafico a barre nella pagina Listener
-        # (receiverChartSchema in chart_schema.dart).
+        # (receiverChartSchema in form_schema.dart, sezione 7.3).
         build_osc_message(f"{base_address}/numberSliderRx", "numberSliderRx", number_slider_val),
         # Questi restano solo nel registro messaggi in fondo alla pagina
         # (non corrispondono a nessun campo/grafico, solo testo).

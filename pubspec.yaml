@@ -45,7 +45,7 @@ dependencies:
   file_picker: ^11.0.2
   drift_flutter: ^0.3.1
   intl: ^0.20.2
-  fl_chart: ^1.2.0                     # grafici (chart_schema.dart / chart_builder.dart)
+  fl_chart: ^1.2.0                     # grafici (form_schema.dart sezione 6 / chart_builder.dart)
 
 dev_dependencies:
   flutter_test:

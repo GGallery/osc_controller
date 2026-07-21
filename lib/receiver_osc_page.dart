@@ -11,17 +11,24 @@
 // contenuto grezzo come testo, così nulla va perso.
 //
 // In cima, la pagina mostra:
-// - un paio di CAMPI in sola lettura (receiverPageSchema, in form_schema.dart:
-//   uno slider e un'area di testo) — stessa "classe mattoncino" e stesso
-//   motore di disegno (DynamicFormField + buildDynamicField) usati per
-//   INVIARE dati via OSC nelle pagine statica/live, ma qui usati con
+// - un paio di CAMPI in sola lettura (receiverPageSchema, in form_schema.dart
+//   sezione 7.3: uno slider e un'area di testo) — stessa "classe mattoncino"
+//   e stesso motore di disegno (DynamicFormField + buildDynamicField) usati
+//   per INVIARE dati via OSC nelle pagine statica/live, ma qui usati con
 //   readOnly: true, così mostrano solo l'ULTIMO valore ricevuto per il loro
 //   id, senza poter essere toccati/modificati dall'utente;
-// - un paio di GRAFICI (receiverChartSchema, in chart_schema.dart) collegati
-//   per `id` ai dati in arrivo: stessa filosofia "mattoncino", ma con la
-//   classe DynamicChartField + motore di disegno buildDynamicChart (vedi
-//   chart_schema.dart/chart_builder.dart), che mostrano lo storico degli
-//   ultimi valori ricevuti, non solo l'ultimo.
+// - un paio di GRAFICI (receiverChartSchema, anch'essa in form_schema.dart
+//   sezione 7.3, subito sotto receiverPageSchema) collegati per `id` ai
+//   dati in arrivo: stessa filosofia "mattoncino", ma con la classe
+//   DynamicChartField (definita in sezione 6) + motore di disegno
+//   buildDynamicChart (vedi chart_builder.dart), che mostrano lo storico
+//   degli ultimi valori ricevuti, non solo l'ultimo.
+//
+// Campi e grafici sono entrambi DEFINITI in form_schema.dart (stesso file,
+// sezione 7.3, uno di seguito all'altro) e vengono qui INTERPRETATI/disegnati
+// insieme, con lo stesso meccanismo: una lista di "mattoncini" mappata sul
+// motore di disegno giusto (buildDynamicField per i campi, buildDynamicChart
+// per i grafici).
 //
 // NOTA SUL LAYOUT (vedi manuale, sezione "Errori di layout: RenderFlex
 // overflow"): l'area dei campi/grafici e il registro messaggi sotto sono
@@ -35,7 +42,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:osc_controller/chart_builder.dart';
-import 'package:osc_controller/chart_schema.dart';
 import 'package:osc_controller/dynamic_field_builder.dart';
 import 'package:osc_controller/form_schema.dart';
 import 'package:osc_controller/osc_decoder.dart';
@@ -174,8 +180,8 @@ class _ReceiverOscPageState extends State<ReceiverOscPage> {
             const SizedBox(height: 12),
 
             // Campi "in sola lettura" + grafici collegati ai dati in arrivo
-            // (vedi receiverPageSchema in form_schema.dart e
-            // receiverChartSchema in chart_schema.dart). Per provarli:
+            // (vedi receiverPageSchema e receiverChartSchema, entrambe in
+            // form_schema.dart, sezione 7.3). Per provarli:
             // lancia "python3 tools/test_osc_sender.py" mentre questa pagina
             // è aperta. Expanded + SingleChildScrollView: se in futuro si
             // aggiungono altri campi/grafici, quest'area scorre invece di
